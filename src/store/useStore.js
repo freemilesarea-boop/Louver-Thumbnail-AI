@@ -1,8 +1,12 @@
 import { create } from 'zustand';
 
 const useStore = create((set, get) => ({
+  // API key (persisted in localStorage)
+  pexelsApiKey: localStorage.getItem('louver-pexels-key') || '',
+  apiStatus: 'idle', // 'idle' | 'connected' | 'error'
+
   // Input state
-  inputMode: 'keyword', // 'keyword' | 'playlist'
+  inputMode: 'keyword',
   keywordInput: '',
   playlistUrl: '',
 
@@ -19,6 +23,13 @@ const useStore = create((set, get) => ({
   // Generated thumbnails
   generatedThumbnails: [],
   selectedThumbnail: null,
+
+  // Actions: API key
+  setPexelsApiKey: (key) => {
+    localStorage.setItem('louver-pexels-key', key);
+    set({ pexelsApiKey: key, apiStatus: 'idle' });
+  },
+  setApiStatus: (status) => set({ apiStatus: status }),
 
   // Actions: Input
   setInputMode: (mode) => set({ inputMode: mode, error: null }),
@@ -38,10 +49,6 @@ const useStore = create((set, get) => ({
 
   // Actions: Generated thumbnails
   setGeneratedThumbnails: (thumbnails) => set({ generatedThumbnails: thumbnails }),
-  addGeneratedThumbnail: (thumbnail) =>
-    set((state) => ({
-      generatedThumbnails: [...state.generatedThumbnails, thumbnail],
-    })),
   selectThumbnail: (index) =>
     set((state) => ({
       selectedThumbnail: state.generatedThumbnails[index] || null,
@@ -62,10 +69,6 @@ const useStore = create((set, get) => ({
       generatedThumbnails: [],
       selectedThumbnail: null,
     }),
-
-  // Computed-like helpers
-  hasResults: () => get().generatedThumbnails.length > 0,
-  hasPlaylistData: () => get().playlistData !== null,
 }));
 
 export default useStore;

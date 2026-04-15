@@ -1,94 +1,161 @@
 /**
- * API Bridge - IPC communication layer
- * Handles communication between renderer and main process
- * Falls back to mock data when running in browser (dev without Electron)
- *
- * v2: Added real image sourcing (Picsum for keywords, YouTube for playlists)
+ * API Bridge
+ * - Pexels API integration for keyword-relevant image search
+ * - YouTube thumbnail extraction for playlist mode
+ * - Picsum fallback when no API key
+ * - IPC bridge for Electron mode
  */
 
 const isElectron = typeof window !== 'undefined' && window.louverAPI;
 
-// ─── Image Sourcing ──────────────────────────────────────────
+// ─── Pexels API ──────────────────────────────────────────────
+
+const PEXELS_BASE = 'https://api.pexels.com/v1';
 
 /**
- * Curated picsum.photos image IDs per mood.
- * Using /id/{number}/1280/720 format → NO redirects, direct image serving.
- * Each ID has been selected to visually match the mood category.
+ * Mood → Pexels 검색 쿼리 매핑
+ * 키워드와 조합하여 관련성 높은 이미지 검색
  */
-const MOOD_IMAGE_IDS = {
-  calm:      [10, 15, 20, 54, 106, 164, 173, 240, 319, 396],
-  energetic: [96, 250, 305, 399, 452, 688, 593, 669, 698, 804],
-  emotional: [1, 65, 110, 119, 135, 244, 407, 493, 517, 658],
-  cozy:      [29, 30, 225, 312, 425, 431, 436, 511, 574, 755],
-  dark:      [42, 90, 142, 155, 370, 501, 547, 590, 638, 724],
-  nature:    [10, 15, 16, 28, 29, 100, 180, 353, 401, 433],
-  romantic:  [82, 102, 119, 176, 326, 374, 449, 486, 579, 646],
-  classical: [24, 36, 48, 342, 366, 395, 421, 453, 532, 620],
+const MOOD_SEARCH_QUERIES = {
+  calm:      ['ocean calm', 'peaceful sky', 'serene nature', 'soft light', 'quiet lake', 'gentle waves'],
+  energetic: ['neon lights', 'concert stage', 'colorful abstract', 'festival crowd', 'vibrant city', 'party lights'],
+  emotional: ['rainy night', 'moody sky', 'dark clouds', 'lonely road', 'starry night', 'foggy morning'],
+  cozy:      ['coffee shop', 'warm interior', 'autumn cozy', 'candle light', 'bookshelf cafe', 'warm blanket'],
+  dark:      ['night city', 'neon urban', 'dark skyline', 'cyberpunk', 'night street', 'dark aesthetic'],
+  nature:    ['forest light', 'mountain landscape', 'ocean waves', 'green forest', 'sunset mountain', 'tropical beach'],
+  romantic:  ['sunset love', 'pink flowers', 'golden hour', 'cherry blossom', 'rose garden', 'romantic sunset'],
+  classical: ['piano music', 'concert hall', 'elegant interior', 'vintage library', 'marble architecture', 'chandelier'],
 };
 
 /**
- * Get image URLs for keyword-based thumbnail generation.
- * Uses picsum.photos /id/ endpoint (direct access, no redirects).
- * These URLs:
- *  - Serve CORS headers (Access-Control-Allow-Origin: *)
- *  - Return images directly (no 302 redirect)
- *  - Consistent results per ID
+ * Pexels API로 이미지 검색
+ * @param {string} query - 검색 키워드
+ * @param {string} apiKey - Pexels API 키
+ * @param {number} count - 요청 이미지 수
+ * @returns {string[]} 이미지 URL 배열
  */
-function getImageUrlsForKeyword(keyword, mood, count = 6) {
-  const ids = MOOD_IMAGE_IDS[mood] || MOOD_IMAGE_IDS.calm;
-  const urls = [];
+async function searchPexelsImages(query, apiKey, count = 6) {
+  console.log(`[Pexels API] Searching: "${query}" (count: ${count})`);
 
-  for (let i = 0; i < count; i++) {
-    const id = ids[i % ids.length];
-    urls.push(`https://picsum.photos/id/${id}/1280/720`);
+  const url = `${PEXELS_BASE}/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape&size=large`;
+
+  const response = await fetch(url, {
+    headers: { Authorization: apiKey },
+  });
+
+  if (!response.ok) {
+    const status = response.status;
+    if (status === 401) throw new Error('Pexels API 키가 유효하지 않습니다.');
+    if (status === 429) throw new Error('Pexels API 요청 한도 초과. 잠시 후 다시 시도하세요.');
+    throw new Error(`Pexels API 오류: HTTP ${status}`);
   }
 
-  console.log(`[API] Image URLs for keyword "${keyword}" (mood: ${mood}):`);
-  urls.forEach((url, i) => console.log(`  [${i}] ${url}`));
+  const data = await response.json();
+  const urls = (data.photos || []).map((photo) => photo.src.landscape);
+
+  console.log(`[Pexels API] ✓ ${urls.length}개 이미지 반환`);
+  urls.forEach((u, i) => console.log(`  [${i}] ${u}`));
 
   return urls;
 }
 
 /**
- * Extract image URLs from playlist data (YouTube thumbnails)
- * YouTube thumbnails from i.ytimg.com support CORS
+ * Pexels API 키 유효성 검증
  */
-function getImageUrlsFromPlaylist(playlistData, count = 6) {
+export async function testPexelsApiKey(apiKey) {
+  if (!apiKey || apiKey.trim().length === 0) {
+    return { valid: false, error: 'API 키를 입력해주세요.' };
+  }
+
+  try {
+    const response = await fetch(`${PEXELS_BASE}/search?query=test&per_page=1`, {
+      headers: { Authorization: apiKey.trim() },
+    });
+
+    if (response.ok) {
+      return { valid: true };
+    } else if (response.status === 401) {
+      return { valid: false, error: 'API 키가 유효하지 않습니다.' };
+    } else {
+      return { valid: false, error: `HTTP ${response.status}` };
+    }
+  } catch (err) {
+    return { valid: false, error: `연결 실패: ${err.message}` };
+  }
+}
+
+// ─── Image URL Generation ────────────────────────────────────
+
+/**
+ * 키워드 기반 이미지 URL 생성
+ * 1순위: Pexels API (키가 있을 때)
+ * 2순위: Picsum fallback (키 없을 때)
+ */
+export async function getImageUrlsForKeyword(keyword, mood, count = 6, apiKey = '') {
+  // Pexels API 사용 (키가 있을 때)
+  if (apiKey && apiKey.trim().length > 0) {
+    try {
+      const queries = MOOD_SEARCH_QUERIES[mood] || MOOD_SEARCH_QUERIES.calm;
+      // 키워드 + 무드 쿼리 조합
+      const searchQuery = `${keyword} ${queries[0]}`;
+      const urls = await searchPexelsImages(searchQuery, apiKey.trim(), count);
+
+      if (urls.length > 0) {
+        return { urls, source: 'pexels' };
+      }
+    } catch (err) {
+      console.warn(`[API] Pexels API 실패: ${err.message}, fallback 사용`);
+    }
+  }
+
+  // Fallback: picsum.photos
+  console.log('[API] Pexels API 키 없음 → picsum.photos fallback 사용');
+  const FALLBACK_IDS = {
+    calm:      [10, 15, 20, 54, 106, 164, 173, 319, 396, 491],
+    energetic: [96, 250, 305, 399, 452, 593, 669, 698, 804, 688],
+    emotional: [1, 65, 110, 119, 135, 244, 407, 493, 517, 658],
+    cozy:      [29, 30, 225, 312, 425, 431, 436, 511, 574, 755],
+    dark:      [42, 90, 142, 155, 370, 501, 547, 590, 638, 724],
+    nature:    [10, 15, 16, 28, 29, 100, 180, 353, 401, 433],
+    romantic:  [82, 102, 119, 176, 326, 374, 449, 486, 579, 646],
+    classical: [24, 36, 48, 342, 366, 395, 421, 453, 532, 620],
+  };
+
+  const ids = FALLBACK_IDS[mood] || FALLBACK_IDS.calm;
+  const urls = [];
+  for (let i = 0; i < count; i++) {
+    urls.push(`https://picsum.photos/id/${ids[i % ids.length]}/1280/720`);
+  }
+
+  return { urls, source: 'picsum-fallback' };
+}
+
+/**
+ * 플레이리스트에서 YouTube 썸네일 URL 추출
+ */
+export function getImageUrlsFromPlaylist(playlistData, count = 6) {
   const items = playlistData?.items || [];
   if (items.length === 0) {
-    console.warn('[API] No playlist items found for image extraction');
-    return [];
+    console.warn('[API] 플레이리스트 항목 없음');
+    return { urls: [], source: 'none' };
   }
 
   const urls = [];
-  for (let i = 0; i < Math.min(count, items.length); i++) {
+  for (let i = 0; i < count; i++) {
     const item = items[i % items.length];
-    const videoId = item.videoId;
-    if (videoId && videoId !== 'mock') {
-      // Try hqdefault (always available, 480x360)
-      urls.push(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
-    } else if (item.thumbnailUrl && item.thumbnailUrl.length > 0) {
+    if (item.videoId) {
+      urls.push(`https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`);
+    } else if (item.thumbnailUrl) {
       urls.push(item.thumbnailUrl);
     }
   }
 
-  // If we couldn't get enough from playlist, pad with early items
-  while (urls.length < count && items.length > 0) {
-    const item = items[urls.length % items.length];
-    if (item.videoId) {
-      urls.push(`https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`);
-    }
-  }
-
-  console.log(`[API] Extracted ${urls.length} YouTube thumbnail URLs from playlist`);
-  urls.forEach((url, i) => console.log(`  [${i}] ${url}`));
-
-  return urls;
+  console.log(`[API] YouTube 썸네일 ${urls.length}개 추출`);
+  return { urls, source: 'youtube' };
 }
 
 // ─── Mock Data ──────────────────────────────────────────────
 
-// Use real YouTube video IDs for mock data so thumbnails actually load
 const MOCK_VIDEO_IDS = [
   'dQw4w9WgXcQ', 'kJQP7kiw5Fk', 'JGwWNGJdvx8', 'RgKAFK5djSk',
   'fJ9rUzIMcZQ', '09R8_2nJtjg', 'YQHsXMglC9A', 'OPf0YbXqDm0',
@@ -100,31 +167,24 @@ const MOCK_PLAYLIST = {
   description: '새벽에 듣기 좋은 감성 팝 모음',
   channelName: 'Louver Music',
   videoCount: '8',
-  items: [
-    { videoId: MOCK_VIDEO_IDS[0], title: 'Midnight City - M83', artist: 'M83', duration: '4:03', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[0]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[1], title: 'Blinding Lights - The Weeknd', artist: 'The Weeknd', duration: '3:20', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[1]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[2], title: 'After Hours - The Weeknd', artist: 'The Weeknd', duration: '6:01', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[2]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[3], title: 'Levitating - Dua Lipa', artist: 'Dua Lipa', duration: '3:23', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[3]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[4], title: 'Stay - The Kid LAROI', artist: 'The Kid LAROI', duration: '2:21', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[4]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[5], title: 'Heat Waves - Glass Animals', artist: 'Glass Animals', duration: '3:58', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[5]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[6], title: 'Watermelon Sugar - Harry Styles', artist: 'Harry Styles', duration: '2:54', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[6]}/hqdefault.jpg` },
-    { videoId: MOCK_VIDEO_IDS[7], title: 'Peaches - Justin Bieber', artist: 'Justin Bieber', duration: '3:18', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[7]}/hqdefault.jpg` },
-  ],
+  items: MOCK_VIDEO_IDS.map((id, i) => ({
+    videoId: id,
+    title: ['Midnight City - M83', 'Blinding Lights', 'After Hours', 'Levitating', 'Stay', 'Heat Waves', 'Watermelon Sugar', 'Peaches'][i],
+    artist: ['M83', 'The Weeknd', 'The Weeknd', 'Dua Lipa', 'The Kid LAROI', 'Glass Animals', 'Harry Styles', 'Justin Bieber'][i],
+    duration: '3:30',
+    thumbnailUrl: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+  })),
   url: 'https://www.youtube.com/playlist?list=PLmock123',
 };
 
 const MOCK_THUMBNAILS = {
   all: MOCK_PLAYLIST.items.map((item) => ({
-    videoId: item.videoId,
-    title: item.title,
-    artist: item.artist,
-    thumbnailUrl: item.thumbnailUrl,
+    videoId: item.videoId, title: item.title, artist: item.artist, thumbnailUrl: item.thumbnailUrl,
   })),
   representatives: [
     { ...MOCK_PLAYLIST.items[0], reason: '재생목록 첫 번째 트랙' },
     { ...MOCK_PLAYLIST.items[3], reason: '재생목록 중간 트랙 (핵심 무드)' },
     { ...MOCK_PLAYLIST.items[7], reason: '재생목록 마지막 트랙' },
-    { ...MOCK_PLAYLIST.items[1], reason: '추가 대표 후보' },
   ],
   totalCount: MOCK_PLAYLIST.items.length,
 };
@@ -143,14 +203,10 @@ const MOOD_KEYWORDS = {
 };
 
 const MOOD_LABELS = {
-  calm: '잔잔한 / 편안한',
-  energetic: '에너지틱 / 신나는',
-  emotional: '감성적 / 새벽 감성',
-  cozy: '아늑한 / 카페 감성',
-  dark: '다크 / 도시적',
-  nature: '자연 / 힐링',
-  romantic: '로맨틱 / 사랑',
-  classical: '클래식 / 우아한',
+  calm: '잔잔한 / 편안한', energetic: '에너지틱 / 신나는',
+  emotional: '감성적 / 새벽 감성', cozy: '아늑한 / 카페 감성',
+  dark: '다크 / 도시적', nature: '자연 / 힐링',
+  romantic: '로맨틱 / 사랑', classical: '클래식 / 우아한',
 };
 
 const MOOD_COLORS = {
@@ -165,14 +221,10 @@ const MOOD_COLORS = {
 };
 
 const MOOD_GRADIENTS = {
-  calm: ['#E0F7FA', '#B2EBF2'],
-  energetic: ['#FF6B6B', '#FFE66D'],
-  emotional: ['#667EEA', '#764BA2'],
-  cozy: ['#F6D365', '#FDA085'],
-  dark: ['#0F0C29', '#302B63'],
-  nature: ['#56AB2F', '#A8E063'],
-  romantic: ['#FF9A9E', '#FAD0C4'],
-  classical: ['#F5F0E8', '#D4C4A8'],
+  calm: ['#E0F7FA', '#B2EBF2'], energetic: ['#FF6B6B', '#FFE66D'],
+  emotional: ['#667EEA', '#764BA2'], cozy: ['#F6D365', '#FDA085'],
+  dark: ['#0F0C29', '#302B63'], nature: ['#56AB2F', '#A8E063'],
+  romantic: ['#FF9A9E', '#FAD0C4'], classical: ['#F5F0E8', '#D4C4A8'],
 };
 
 function analyzeMoodFromText(text) {
@@ -208,25 +260,19 @@ function analyzeMoodFromText(text) {
 // ─── API Functions ──────────────────────────────────────────
 
 export async function parsePlaylist(url) {
-  if (isElectron) {
-    return window.louverAPI.parsePlaylist(url);
-  }
+  if (isElectron) return window.louverAPI.parsePlaylist(url);
   await new Promise((r) => setTimeout(r, 1200));
   return { success: true, data: MOCK_PLAYLIST };
 }
 
 export async function collectThumbnails(playlistData) {
-  if (isElectron) {
-    return window.louverAPI.collectThumbnails(playlistData);
-  }
+  if (isElectron) return window.louverAPI.collectThumbnails(playlistData);
   await new Promise((r) => setTimeout(r, 800));
   return { success: true, data: MOCK_THUMBNAILS };
 }
 
 export async function analyzeMood(data) {
-  if (isElectron) {
-    return window.louverAPI.analyzeMood(data);
-  }
+  if (isElectron) return window.louverAPI.analyzeMood(data);
   await new Promise((r) => setTimeout(r, 600));
 
   const text = [
@@ -235,24 +281,17 @@ export async function analyzeMood(data) {
     ...(data.playlistData?.items || []).map((i) => i.title),
   ].join(' ');
 
-  const moodResult = analyzeMoodFromText(text);
   return {
     success: true,
-    data: {
-      ...moodResult,
-      playlistTitle: data.playlistData?.title,
-      trackCount: (data.playlistData?.items || []).length,
-    },
+    data: { ...analyzeMoodFromText(text), playlistTitle: data.playlistData?.title, trackCount: (data.playlistData?.items || []).length },
   };
 }
 
 export async function scoreThumbnail(config) {
-  if (isElectron) {
-    return window.louverAPI.scoreThumbnail(config);
-  }
+  if (isElectron) return window.louverAPI.scoreThumbnail(config);
 
   let score = 50;
-  if (config.hasImage) score += 12; // Image-based thumbnails score higher
+  if (config.hasImage) score += 12;
   if (config.hasGradient) score += 3;
   if (config.fontSize >= 48) score += 8;
   if (config.textLength <= 15) score += 8;
@@ -261,8 +300,8 @@ export async function scoreThumbnail(config) {
   if (config.aspectRatio === '16:9') score += 3;
   if (config.hasPlaylistIndicator) score += 4;
   score += Math.floor(Math.random() * 6);
-
   score = Math.min(score, 100);
+
   let grade;
   if (score >= 85) grade = 'S';
   else if (score >= 75) grade = 'A';
@@ -273,8 +312,7 @@ export async function scoreThumbnail(config) {
   return {
     success: true,
     data: {
-      totalScore: score,
-      grade,
+      totalScore: score, grade,
       breakdown: {
         contrast: { score: Math.floor(score * 0.25), max: 25, label: '배경 대비' },
         readability: { score: Math.floor(score * 0.28), max: 25, label: '텍스트 가독성' },
@@ -283,15 +321,13 @@ export async function scoreThumbnail(config) {
       },
       recommendations: score >= 75
         ? ['훌륭한 썸네일입니다! 높은 CTR이 예상됩니다.']
-        : ['배경과 텍스트의 대비를 높여보세요.', '플레이리스트 분위기에 맞는 이미지를 추가해보세요.'],
+        : ['배경과 텍스트의 대비를 높여보세요.'],
     },
   };
 }
 
 export async function saveThumbnail(data) {
-  if (isElectron) {
-    return window.louverAPI.saveThumbnail(data);
-  }
+  if (isElectron) return window.louverAPI.saveThumbnail(data);
   const link = document.createElement('a');
   link.download = data.filename || 'thumbnail.png';
   link.href = data.dataUrl;
@@ -302,5 +338,3 @@ export async function saveThumbnail(data) {
 export function analyzeKeywordMood(keyword) {
   return analyzeMoodFromText(keyword);
 }
-
-export { getImageUrlsForKeyword, getImageUrlsFromPlaylist };
