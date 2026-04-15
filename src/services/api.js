@@ -11,8 +11,7 @@ import { getFromCache, saveToCache } from './cache.js';
 import { getFallbackImages } from './fallbackImages.js';
 import { recordApiCall } from './apiUsage.js';
 
-const isElectron = typeof window !== 'undefined' && window.louverAPI;
-const PEXELS_BASE = 'https://api.pexels.com/v1';
+const isElectron = typeof window !== 'undefined' && window.louverAPI?.isElectron;
 
 // ─── Mood → 검색 쿼리 매핑 ──────────────────────────────────
 
@@ -28,28 +27,43 @@ const MOOD_SEARCH_QUERIES = {
 };
 
 // ─── Pexels API ──────────────────────────────────────────────
+// Electron: 메인 프로세스 프록시 (CORS 없음)
+// 브라우저: 직접 fetch (개발용)
 
 async function searchPexels(query, apiKey, count = 6) {
   console.log(`[Pexels] 검색: "${query}" (${count}개)`);
-  const url = `${PEXELS_BASE}/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape&size=large`;
 
+  if (isElectron) {
+    // 메인 프로세스에서 API 호출 (CORS 완전 우회)
+    const result = await window.louverAPI.pexelsSearch({ query, apiKey, count });
+    if (!result.success) throw new Error(result.error);
+    console.log(`[Pexels] ✓ ${result.data.length}개 반환 (IPC 프록시)`);
+    return result.data;
+  }
+
+  // 브라우저 fallback (개발용)
+  const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=${count}&orientation=landscape&size=large`;
   const res = await fetch(url, { headers: { Authorization: apiKey } });
   if (!res.ok) {
     if (res.status === 401) throw new Error('Pexels API 키가 유효하지 않습니다.');
     if (res.status === 429) throw new Error('Pexels API 요청 한도 초과.');
     throw new Error(`Pexels API 오류: HTTP ${res.status}`);
   }
-
   const data = await res.json();
-  const urls = (data.photos || []).map((p) => p.src.landscape);
-  console.log(`[Pexels] ✓ ${urls.length}개 반환`);
-  return urls;
+  return (data.photos || []).map((p) => p.src.landscape);
 }
 
 export async function testPexelsApiKey(apiKey) {
   if (!apiKey?.trim()) return { valid: false, error: 'API 키를 입력해주세요.' };
+
+  if (isElectron) {
+    const result = await window.louverAPI.pexelsTestKey(apiKey.trim());
+    if (!result.success) return { valid: false, error: result.error };
+    return result.valid ? { valid: true } : { valid: false, error: result.error || '유효하지 않음' };
+  }
+
   try {
-    const res = await fetch(`${PEXELS_BASE}/search?query=test&per_page=1`, {
+    const res = await fetch('https://api.pexels.com/v1/search?query=test&per_page=1', {
       headers: { Authorization: apiKey.trim() },
     });
     if (res.ok) return { valid: true };

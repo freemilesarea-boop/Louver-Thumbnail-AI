@@ -4,13 +4,14 @@
   "description": "AI-powered YouTube playlist thumbnail auto-generation and CTR optimization system by Louver",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev": "concurrently -n vite,electron \"npm run dev:vite\" \"npm run dev:electron\"",
     "dev:vite": "vite",
-    "dev:electron": "cross-env NODE_ENV=development electron .",
+    "dev:electron": "wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
-    "build:electron": "vite build && electron-builder",
-    "preview": "vite preview",
-    "lint": "eslint src/"
+    "package": "vite build && electron-builder --config",
+    "package:win": "vite build && electron-builder --win --config",
+    "package:mac": "vite build && electron-builder --mac --config",
+    "package:linux": "vite build && electron-builder --linux --config"
   },
   "author": "Louver",
   "license": "MIT",
@@ -29,7 +30,8 @@
     "electron-builder": "^24.13.3",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.6",
-    "vite": "^5.3.4"
+    "vite": "^5.3.4",
+    "wait-on": "^9.0.5"
   },
   "build": {
     "appId": "com.louver.thumbnail-ai",
@@ -41,6 +43,21 @@
       "dist/**/*",
       "electron/**/*",
       "package.json"
-    ]
+    ],
+    "win": {
+      "target": ["nsis"]
+    },
+    "mac": {
+      "target": ["dmg"],
+      "category": "public.app-category.graphics-design"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Graphics"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

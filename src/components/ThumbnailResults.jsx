@@ -3,32 +3,35 @@ import useStore from '../store/useStore';
 import ThumbnailCard from './ThumbnailCard';
 import { saveThumbnail } from '../services/api';
 
+const isElectron = typeof window !== 'undefined' && window.louverAPI?.isElectron;
+
 export default function ThumbnailResults() {
   const { generatedThumbnails, selectThumbnail } = useStore();
 
   const handleDownload = async (thumbnail) => {
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `louver-thumbnail-${timestamp}-${thumbnail.id.slice(-4)}.png`;
-
-    await saveThumbnail({
-      dataUrl: thumbnail.dataUrl,
-      filename,
-    });
+    await saveThumbnail({ dataUrl: thumbnail.dataUrl, filename });
   };
 
   const handleDownloadAll = async () => {
-    for (const thumb of generatedThumbnails) {
-      const timestamp = new Date().toISOString().slice(0, 10);
-      const filename = `louver-thumbnail-${timestamp}-${thumb.id.slice(-4)}.png`;
-
-      // Browser download for each
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = thumb.dataUrl;
-      link.click();
-
-      // Small delay between downloads
-      await new Promise((r) => setTimeout(r, 300));
+    if (isElectron) {
+      // Electron: 네이티브 폴더 선택 → 일괄 저장
+      const result = await window.louverAPI.saveAllThumbnails(
+        generatedThumbnails.map((t) => ({ dataUrl: t.dataUrl, id: t.id }))
+      );
+      if (result.success) {
+        console.log(`[Save] ${result.saved.length}개 저장 완료: ${result.dir}`);
+      }
+    } else {
+      // 브라우저 fallback
+      for (const thumb of generatedThumbnails) {
+        const link = document.createElement('a');
+        link.download = `louver-thumbnail-${thumb.id.slice(-4)}.png`;
+        link.href = thumb.dataUrl;
+        link.click();
+        await new Promise((r) => setTimeout(r, 300));
+      }
     }
   };
 

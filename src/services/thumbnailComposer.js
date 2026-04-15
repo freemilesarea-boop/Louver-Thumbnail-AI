@@ -111,61 +111,66 @@ const DESIGN_PRESETS = {
 // ─── Image Loading ──────────────────────────────────────────
 
 /**
- * Load an image from URL using fetch→blob→objectURL approach.
- * This bypasses ALL CORS/canvas-tainting issues because:
- *  1. fetch() handles CORS at network level (follows redirects properly)
- *  2. Blob URL is same-origin, so canvas is never tainted
- *  3. Works with picsum.photos redirects, YouTube thumbnails, etc.
+ * Load an image from URL.
+ *
+ * Electron: 메인 프로세스 프록시로 다운로드 → base64 data URL (CORS 완전 우회)
+ * 브라우저: fetch→blob→objectURL (개발용)
+ * data:image URL: 직접 로드 (fallback 이미지)
  *
  * Returns HTMLImageElement or null on failure.
  */
 async function loadImage(url) {
   if (!url) {
-    console.log('[Composer] No image URL provided, will use fallback');
+    console.log('[Composer] No image URL');
     return null;
   }
 
   try {
-    console.log(`[Composer] Fetching image via fetch+blob: ${url}`);
+    let imgSrc;
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(url, {
-      mode: 'cors',
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.warn(`[Composer] ✗ Fetch failed: HTTP ${response.status} → ${url}`);
-      return null;
+    if (url.startsWith('data:')) {
+      // 이미 data URL (fallback 이미지) → 바로 사용
+      imgSrc = url;
+      console.log('[Composer] Loading data URL image');
+    } else if (typeof window !== 'undefined' && window.louverAPI?.isElectron) {
+      // Electron: 메인 프로세스에서 다운로드 (CORS 없음)
+      console.log(`[Composer] Fetching via Electron proxy: ${url}`);
+      const result = await window.louverAPI.fetchImage(url);
+      if (!result.success) {
+        console.warn(`[Composer] ✗ Electron proxy failed: ${result.error}`);
+        return null;
+      }
+      imgSrc = result.dataUrl;
+    } else {
+      // 브라우저: fetch → blob → objectURL
+      console.log(`[Composer] Fetching via browser: ${url}`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(url, { mode: 'cors', signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        console.warn(`[Composer] ✗ HTTP ${response.status}: ${url}`);
+        return null;
+      }
+      const blob = await response.blob();
+      imgSrc = URL.createObjectURL(blob);
     }
 
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-
+    // Image 엘리먼트로 변환
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
-        console.log(`[Composer] ✓ Image loaded: ${url} (${img.width}x${img.height}, ${(blob.size / 1024).toFixed(1)}KB)`);
-        // Don't revoke yet - canvas needs the image data
-        // Will be garbage collected when img is dereferenced
+        console.log(`[Composer] ✓ Image ready: ${img.width}x${img.height}`);
         resolve(img);
       };
       img.onerror = () => {
-        console.warn(`[Composer] ✗ Image element failed to render blob: ${url}`);
-        URL.revokeObjectURL(objectUrl);
+        console.warn(`[Composer] ✗ Image element error`);
         resolve(null);
       };
-      img.src = objectUrl;
+      img.src = imgSrc;
     });
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.warn(`[Composer] ✗ Image fetch timeout (10s): ${url}`);
-    } else {
-      console.warn(`[Composer] ✗ Image fetch error: ${url}`, err.message);
-    }
+    console.warn(`[Composer] ✗ ${err.name === 'AbortError' ? 'Timeout' : err.message}: ${url}`);
     return null;
   }
 }
