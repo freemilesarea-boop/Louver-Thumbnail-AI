@@ -2,26 +2,111 @@
  * API Bridge - IPC communication layer
  * Handles communication between renderer and main process
  * Falls back to mock data when running in browser (dev without Electron)
+ *
+ * v2: Added real image sourcing (Picsum for keywords, YouTube for playlists)
  */
 
 const isElectron = typeof window !== 'undefined' && window.louverAPI;
 
-// Mock data for browser development
+// ─── Image Sourcing ──────────────────────────────────────────
+
+/**
+ * Mood-to-keyword mapping for image search
+ * Used to find relevant stock images for each mood
+ */
+const MOOD_IMAGE_QUERIES = {
+  calm: ['ocean sunset', 'peaceful lake', 'soft clouds sky', 'calm water reflection', 'misty mountains', 'zen garden', 'smooth waves'],
+  energetic: ['concert lights', 'neon city', 'party crowd', 'colorful abstract', 'fireworks night', 'dance floor', 'festival stage'],
+  emotional: ['rainy window', 'night city lights', 'starry sky', 'lonely road night', 'moon clouds', 'candlelight dark', 'foggy street'],
+  cozy: ['coffee shop interior', 'warm fireplace', 'autumn leaves', 'bookstore cozy', 'rainy cafe window', 'warm blanket', 'bakery interior'],
+  dark: ['city skyline night', 'neon signs dark', 'urban night rain', 'dark alley lights', 'cyberpunk city', 'night highway', 'dark studio'],
+  nature: ['forest sunlight', 'ocean waves beach', 'green mountains', 'wildflower field', 'waterfall tropical', 'autumn forest', 'sunrise mountain'],
+  romantic: ['sunset couple silhouette', 'pink flowers garden', 'paris evening', 'cherry blossom', 'candlelit dinner', 'rose petals', 'golden hour'],
+  classical: ['grand piano', 'concert hall', 'violin closeup', 'orchestra stage', 'elegant chandelier', 'marble architecture', 'vintage library'],
+};
+
+/**
+ * Get image URLs for keyword-based thumbnail generation
+ * Uses picsum.photos (free, CORS-friendly, no API key)
+ * Seeds are based on mood keywords for variety
+ */
+function getImageUrlsForKeyword(keyword, mood, count = 6) {
+  const queries = MOOD_IMAGE_QUERIES[mood] || MOOD_IMAGE_QUERIES.calm;
+  const urls = [];
+
+  for (let i = 0; i < count; i++) {
+    const seed = `${keyword}-${queries[i % queries.length]}-${i}`;
+    const encodedSeed = encodeURIComponent(seed);
+    // picsum.photos supports CORS and seed-based consistent images
+    urls.push(`https://picsum.photos/seed/${encodedSeed}/1280/720`);
+  }
+
+  console.log(`[API] Generated ${urls.length} image URLs for keyword "${keyword}" (mood: ${mood})`);
+  urls.forEach((url, i) => console.log(`  [${i}] ${url}`));
+
+  return urls;
+}
+
+/**
+ * Extract image URLs from playlist data (YouTube thumbnails)
+ * YouTube thumbnails from i.ytimg.com support CORS
+ */
+function getImageUrlsFromPlaylist(playlistData, count = 6) {
+  const items = playlistData?.items || [];
+  if (items.length === 0) {
+    console.warn('[API] No playlist items found for image extraction');
+    return [];
+  }
+
+  const urls = [];
+  for (let i = 0; i < Math.min(count, items.length); i++) {
+    const item = items[i % items.length];
+    const videoId = item.videoId;
+    if (videoId && videoId !== 'mock') {
+      // Try hqdefault (always available, 480x360)
+      urls.push(`https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`);
+    } else if (item.thumbnailUrl && item.thumbnailUrl.length > 0) {
+      urls.push(item.thumbnailUrl);
+    }
+  }
+
+  // If we couldn't get enough from playlist, pad with early items
+  while (urls.length < count && items.length > 0) {
+    const item = items[urls.length % items.length];
+    if (item.videoId) {
+      urls.push(`https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`);
+    }
+  }
+
+  console.log(`[API] Extracted ${urls.length} YouTube thumbnail URLs from playlist`);
+  urls.forEach((url, i) => console.log(`  [${i}] ${url}`));
+
+  return urls;
+}
+
+// ─── Mock Data ──────────────────────────────────────────────
+
+// Use real YouTube video IDs for mock data so thumbnails actually load
+const MOCK_VIDEO_IDS = [
+  'dQw4w9WgXcQ', 'kJQP7kiw5Fk', 'JGwWNGJdvx8', 'RgKAFK5djSk',
+  'fJ9rUzIMcZQ', '09R8_2nJtjg', 'YQHsXMglC9A', 'OPf0YbXqDm0',
+];
+
 const MOCK_PLAYLIST = {
   playlistId: 'PLmock123',
   title: '새벽 감성 팝 플레이리스트',
   description: '새벽에 듣기 좋은 감성 팝 모음',
   channelName: 'Louver Music',
-  videoCount: '15',
+  videoCount: '8',
   items: [
-    { videoId: 'mock1', title: 'Midnight City - M83', artist: 'M83', duration: '4:03', thumbnailUrl: '' },
-    { videoId: 'mock2', title: 'Blinding Lights - The Weeknd', artist: 'The Weeknd', duration: '3:20', thumbnailUrl: '' },
-    { videoId: 'mock3', title: 'After Hours - The Weeknd', artist: 'The Weeknd', duration: '6:01', thumbnailUrl: '' },
-    { videoId: 'mock4', title: 'Levitating - Dua Lipa', artist: 'Dua Lipa', duration: '3:23', thumbnailUrl: '' },
-    { videoId: 'mock5', title: 'Stay - The Kid LAROI', artist: 'The Kid LAROI', duration: '2:21', thumbnailUrl: '' },
-    { videoId: 'mock6', title: 'Heat Waves - Glass Animals', artist: 'Glass Animals', duration: '3:58', thumbnailUrl: '' },
-    { videoId: 'mock7', title: 'Watermelon Sugar - Harry Styles', artist: 'Harry Styles', duration: '2:54', thumbnailUrl: '' },
-    { videoId: 'mock8', title: 'Peaches - Justin Bieber', artist: 'Justin Bieber', duration: '3:18', thumbnailUrl: '' },
+    { videoId: MOCK_VIDEO_IDS[0], title: 'Midnight City - M83', artist: 'M83', duration: '4:03', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[0]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[1], title: 'Blinding Lights - The Weeknd', artist: 'The Weeknd', duration: '3:20', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[1]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[2], title: 'After Hours - The Weeknd', artist: 'The Weeknd', duration: '6:01', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[2]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[3], title: 'Levitating - Dua Lipa', artist: 'Dua Lipa', duration: '3:23', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[3]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[4], title: 'Stay - The Kid LAROI', artist: 'The Kid LAROI', duration: '2:21', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[4]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[5], title: 'Heat Waves - Glass Animals', artist: 'Glass Animals', duration: '3:58', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[5]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[6], title: 'Watermelon Sugar - Harry Styles', artist: 'Harry Styles', duration: '2:54', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[6]}/hqdefault.jpg` },
+    { videoId: MOCK_VIDEO_IDS[7], title: 'Peaches - Justin Bieber', artist: 'Justin Bieber', duration: '3:18', thumbnailUrl: `https://i.ytimg.com/vi/${MOCK_VIDEO_IDS[7]}/hqdefault.jpg` },
   ],
   url: 'https://www.youtube.com/playlist?list=PLmock123',
 };
@@ -37,11 +122,13 @@ const MOCK_THUMBNAILS = {
     { ...MOCK_PLAYLIST.items[0], reason: '재생목록 첫 번째 트랙' },
     { ...MOCK_PLAYLIST.items[3], reason: '재생목록 중간 트랙 (핵심 무드)' },
     { ...MOCK_PLAYLIST.items[7], reason: '재생목록 마지막 트랙' },
+    { ...MOCK_PLAYLIST.items[1], reason: '추가 대표 후보' },
   ],
   totalCount: MOCK_PLAYLIST.items.length,
 };
 
-// Mood analysis keywords and logic (simplified client-side version)
+// ─── Mood Analysis ──────────────────────────────────────────
+
 const MOOD_KEYWORDS = {
   calm: ['잔잔', '편안', '힐링', 'calm', 'relax', 'peaceful', 'chill', 'soft', 'quiet', 'sleep', 'ambient'],
   energetic: ['신나는', '에너지', 'energy', 'upbeat', 'party', 'dance', 'EDM', 'hype', 'workout', 'power'],
@@ -93,9 +180,7 @@ function analyzeMoodFromText(text) {
   for (const [mood, keywords] of Object.entries(MOOD_KEYWORDS)) {
     scores[mood] = 0;
     for (const keyword of keywords) {
-      if (lower.includes(keyword)) {
-        scores[mood] += 1;
-      }
+      if (lower.includes(keyword)) scores[mood] += 1;
     }
   }
 
@@ -109,9 +194,7 @@ function analyzeMoodFromText(text) {
     primaryMood,
     moodLabel: MOOD_LABELS[primaryMood],
     allMoods: (sorted.length > 0 ? sorted : [['calm', 1]]).slice(0, 3).map(([mood, score]) => ({
-      mood,
-      score,
-      label: MOOD_LABELS[mood],
+      mood, score, label: MOOD_LABELS[mood],
     })),
     suggestedColors: MOOD_COLORS[primaryMood],
     suggestedGradient: MOOD_GRADIENTS[primaryMood],
@@ -120,12 +203,12 @@ function analyzeMoodFromText(text) {
   };
 }
 
-// API functions
+// ─── API Functions ──────────────────────────────────────────
+
 export async function parsePlaylist(url) {
   if (isElectron) {
     return window.louverAPI.parsePlaylist(url);
   }
-  // Mock for browser dev
   await new Promise((r) => setTimeout(r, 1200));
   return { success: true, data: MOCK_PLAYLIST };
 }
@@ -165,16 +248,17 @@ export async function scoreThumbnail(config) {
   if (isElectron) {
     return window.louverAPI.scoreThumbnail(config);
   }
-  // Client-side simple scoring
+
   let score = 50;
-  if (config.hasGradient) score += 5;
-  if (config.fontSize >= 48) score += 10;
+  if (config.hasImage) score += 12; // Image-based thumbnails score higher
+  if (config.hasGradient) score += 3;
+  if (config.fontSize >= 48) score += 8;
   if (config.textLength <= 15) score += 8;
-  if (config.hasTextShadow) score += 5;
-  if (config.moodMatch === 'high') score += 10;
-  if (config.aspectRatio === '16:9') score += 5;
+  if (config.hasTextShadow) score += 4;
+  if (config.moodMatch === 'high') score += 8;
+  if (config.aspectRatio === '16:9') score += 3;
   if (config.hasPlaylistIndicator) score += 4;
-  score += Math.floor(Math.random() * 8);
+  score += Math.floor(Math.random() * 6);
 
   score = Math.min(score, 100);
   let grade;
@@ -197,7 +281,7 @@ export async function scoreThumbnail(config) {
       },
       recommendations: score >= 75
         ? ['훌륭한 썸네일입니다! 높은 CTR이 예상됩니다.']
-        : ['배경과 텍스트의 대비를 높여보세요.', '텍스트 크기를 키우거나 글자 수를 줄여보세요.'],
+        : ['배경과 텍스트의 대비를 높여보세요.', '플레이리스트 분위기에 맞는 이미지를 추가해보세요.'],
     },
   };
 }
@@ -206,7 +290,6 @@ export async function saveThumbnail(data) {
   if (isElectron) {
     return window.louverAPI.saveThumbnail(data);
   }
-  // Browser fallback: trigger download
   const link = document.createElement('a');
   link.download = data.filename || 'thumbnail.png';
   link.href = data.dataUrl;
@@ -217,3 +300,5 @@ export async function saveThumbnail(data) {
 export function analyzeKeywordMood(keyword) {
   return analyzeMoodFromText(keyword);
 }
+
+export { getImageUrlsForKeyword, getImageUrlsFromPlaylist };

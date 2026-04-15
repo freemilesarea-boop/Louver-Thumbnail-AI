@@ -61,6 +61,17 @@ export default function ThumbnailCard({ thumbnail, index, onSelect, onDownload }
           </div>
         )}
 
+        {/* Image source badge */}
+        <div className="absolute top-2 left-2">
+          <div className={`px-2 py-1 rounded-lg text-xs font-medium ${
+            thumbnail.usedImage
+              ? 'bg-emerald-500/90 text-white'
+              : 'bg-gray-500/70 text-white'
+          }`}>
+            {thumbnail.usedImage ? '이미지' : '그라데이션'}
+          </div>
+        </div>
+
         {/* CTR Score badge */}
         {score && (
           <div className="absolute top-2 right-2">

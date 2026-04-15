@@ -1,21 +1,18 @@
 import React, { useState } from 'react';
 import useStore from '../store/useStore';
-import { parsePlaylist, collectThumbnails, analyzeMood, analyzeKeywordMood } from '../services/api';
+import {
+  parsePlaylist, collectThumbnails, analyzeMood, analyzeKeywordMood,
+  getImageUrlsForKeyword, getImageUrlsFromPlaylist,
+} from '../services/api';
 import { generateThumbnailSet } from '../services/thumbnailComposer';
 
 export default function InputSection() {
   const {
-    inputMode,
-    setInputMode,
-    keywordInput,
-    setKeywordInput,
-    playlistUrl,
-    setPlaylistUrl,
-    setLoading,
-    setError,
-    setPlaylistData,
-    setThumbnailCollection,
-    setMoodAnalysis,
+    inputMode, setInputMode,
+    keywordInput, setKeywordInput,
+    playlistUrl, setPlaylistUrl,
+    setLoading, setError,
+    setPlaylistData, setThumbnailCollection, setMoodAnalysis,
     setGeneratedThumbnails,
     isLoading,
   } = useStore();
@@ -37,6 +34,7 @@ export default function InputSection() {
         return;
       }
       setPlaylistData(parseResult.data);
+      console.log('[InputSection] Playlist parsed:', parseResult.data.title, `(${parseResult.data.items?.length} items)`);
 
       // Step 2: Collect thumbnails
       setLoading(true, '썸네일 수집 중...');
@@ -46,6 +44,7 @@ export default function InputSection() {
         return;
       }
       setThumbnailCollection(thumbResult.data);
+      console.log('[InputSection] Thumbnails collected:', thumbResult.data.totalCount);
 
       // Step 3: Analyze mood
       setLoading(true, '분위기 분석 중...');
@@ -58,20 +57,31 @@ export default function InputSection() {
         return;
       }
       setMoodAnalysis(moodResult.data);
+      console.log('[InputSection] Mood analyzed:', moodResult.data.primaryMood, moodResult.data.moodLabel);
 
-      // Step 4: Generate thumbnails
-      setLoading(true, '썸네일 생성 중...');
-      const thumbnails = generateThumbnailSet({
+      // Step 4: Extract image URLs from playlist
+      const imageUrls = getImageUrlsFromPlaylist(parseResult.data, thumbnailCount);
+      console.log(`[InputSection] Image URLs for composer: ${imageUrls.length}`);
+
+      // Step 5: Generate thumbnails with images (async!)
+      setLoading(true, '이미지 기반 썸네일 생성 중...');
+      const thumbnails = await generateThumbnailSet({
         title: parseResult.data.title,
         subTitle: parseResult.data.channelName || '',
         mood: moodResult.data.primaryMood,
         trackCount: parseResult.data.items.length,
         count: thumbnailCount,
+        imageUrls,
       });
-      setGeneratedThumbnails(thumbnails);
 
+      // Log results
+      const imageCount = thumbnails.filter((t) => t.usedImage).length;
+      console.log(`[InputSection] Generated ${thumbnails.length} thumbnails (${imageCount} image-based)`);
+
+      setGeneratedThumbnails(thumbnails);
       setLoading(false);
     } catch (err) {
+      console.error('[InputSection] Error:', err);
       setError(err.message || '처리 중 오류가 발생했습니다.');
     }
   };
@@ -92,20 +102,30 @@ export default function InputSection() {
         playlistTitle: keywordInput.trim(),
         trackCount: 0,
       });
+      console.log('[InputSection] Keyword mood:', moodResult.primaryMood, moodResult.moodLabel);
 
-      // Generate thumbnails
-      setLoading(true, '썸네일 생성 중...');
-      const thumbnails = generateThumbnailSet({
+      // Get image URLs based on keyword + mood
+      const imageUrls = getImageUrlsForKeyword(keywordInput.trim(), moodResult.primaryMood, thumbnailCount);
+      console.log(`[InputSection] Image URLs for keyword mode: ${imageUrls.length}`);
+
+      // Generate thumbnails with images (async!)
+      setLoading(true, '이미지 기반 썸네일 생성 중...');
+      const thumbnails = await generateThumbnailSet({
         title: keywordInput.trim(),
         subTitle: '',
         mood: moodResult.primaryMood,
         trackCount: null,
         count: thumbnailCount,
+        imageUrls,
       });
-      setGeneratedThumbnails(thumbnails);
 
+      const imageCount = thumbnails.filter((t) => t.usedImage).length;
+      console.log(`[InputSection] Generated ${thumbnails.length} thumbnails (${imageCount} image-based)`);
+
+      setGeneratedThumbnails(thumbnails);
       setLoading(false);
     } catch (err) {
+      console.error('[InputSection] Error:', err);
       setError(err.message || '처리 중 오류가 발생했습니다.');
     }
   };

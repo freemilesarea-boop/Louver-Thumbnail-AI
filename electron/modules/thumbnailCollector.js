@@ -14,7 +14,7 @@ async function fetchImageAsBase64(url) {
       responseType: 'arraybuffer',
       timeout: 10000,
     });
-    const base64 = Buffer.from(response.data, 'base64').toString('base64');
+    const base64 = Buffer.from(response.data).toString('base64');
     const contentType = response.headers['content-type'] || 'image/jpeg';
     return `data:${contentType};base64,${base64}`;
   } catch {

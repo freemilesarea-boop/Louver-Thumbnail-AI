@@ -73,7 +73,20 @@ export default function ThumbnailDetail() {
               <p className="text-sm font-medium text-louver-text-primary">1280 x 720</p>
             </div>
             <div className="space-y-1">
-              <span className="text-xs text-louver-text-muted">그래디언트</span>
+              <span className="text-xs text-louver-text-muted">데이터 소스</span>
+              <p className={`text-sm font-medium ${selectedThumbnail.usedImage ? 'text-emerald-600' : 'text-louver-text-muted'}`}>
+                {selectedThumbnail.usedImage ? '이미지 기반' : '그라데이션 (fallback)'}
+              </p>
+              {selectedThumbnail.imageSource && selectedThumbnail.imageSource !== 'none' && (
+                <p className="text-xs text-louver-text-muted truncate" title={selectedThumbnail.imageSource}>
+                  {selectedThumbnail.imageSource.length > 60
+                    ? selectedThumbnail.imageSource.slice(0, 60) + '...'
+                    : selectedThumbnail.imageSource}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-louver-text-muted">배경 스타일</span>
               <div className="flex items-center gap-1.5">
                 {selectedThumbnail.gradientColors?.map((c, i) => (
                   <div key={i} className="flex items-center gap-1">
