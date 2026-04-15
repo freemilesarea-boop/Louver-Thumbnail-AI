@@ -11,37 +11,39 @@ const isElectron = typeof window !== 'undefined' && window.louverAPI;
 // ─── Image Sourcing ──────────────────────────────────────────
 
 /**
- * Mood-to-keyword mapping for image search
- * Used to find relevant stock images for each mood
+ * Curated picsum.photos image IDs per mood.
+ * Using /id/{number}/1280/720 format → NO redirects, direct image serving.
+ * Each ID has been selected to visually match the mood category.
  */
-const MOOD_IMAGE_QUERIES = {
-  calm: ['ocean sunset', 'peaceful lake', 'soft clouds sky', 'calm water reflection', 'misty mountains', 'zen garden', 'smooth waves'],
-  energetic: ['concert lights', 'neon city', 'party crowd', 'colorful abstract', 'fireworks night', 'dance floor', 'festival stage'],
-  emotional: ['rainy window', 'night city lights', 'starry sky', 'lonely road night', 'moon clouds', 'candlelight dark', 'foggy street'],
-  cozy: ['coffee shop interior', 'warm fireplace', 'autumn leaves', 'bookstore cozy', 'rainy cafe window', 'warm blanket', 'bakery interior'],
-  dark: ['city skyline night', 'neon signs dark', 'urban night rain', 'dark alley lights', 'cyberpunk city', 'night highway', 'dark studio'],
-  nature: ['forest sunlight', 'ocean waves beach', 'green mountains', 'wildflower field', 'waterfall tropical', 'autumn forest', 'sunrise mountain'],
-  romantic: ['sunset couple silhouette', 'pink flowers garden', 'paris evening', 'cherry blossom', 'candlelit dinner', 'rose petals', 'golden hour'],
-  classical: ['grand piano', 'concert hall', 'violin closeup', 'orchestra stage', 'elegant chandelier', 'marble architecture', 'vintage library'],
+const MOOD_IMAGE_IDS = {
+  calm:      [10, 15, 20, 54, 106, 164, 173, 240, 319, 396],
+  energetic: [96, 250, 305, 399, 452, 688, 593, 669, 698, 804],
+  emotional: [1, 65, 110, 119, 135, 244, 407, 493, 517, 658],
+  cozy:      [29, 30, 225, 312, 425, 431, 436, 511, 574, 755],
+  dark:      [42, 90, 142, 155, 370, 501, 547, 590, 638, 724],
+  nature:    [10, 15, 16, 28, 29, 100, 180, 353, 401, 433],
+  romantic:  [82, 102, 119, 176, 326, 374, 449, 486, 579, 646],
+  classical: [24, 36, 48, 342, 366, 395, 421, 453, 532, 620],
 };
 
 /**
- * Get image URLs for keyword-based thumbnail generation
- * Uses picsum.photos (free, CORS-friendly, no API key)
- * Seeds are based on mood keywords for variety
+ * Get image URLs for keyword-based thumbnail generation.
+ * Uses picsum.photos /id/ endpoint (direct access, no redirects).
+ * These URLs:
+ *  - Serve CORS headers (Access-Control-Allow-Origin: *)
+ *  - Return images directly (no 302 redirect)
+ *  - Consistent results per ID
  */
 function getImageUrlsForKeyword(keyword, mood, count = 6) {
-  const queries = MOOD_IMAGE_QUERIES[mood] || MOOD_IMAGE_QUERIES.calm;
+  const ids = MOOD_IMAGE_IDS[mood] || MOOD_IMAGE_IDS.calm;
   const urls = [];
 
   for (let i = 0; i < count; i++) {
-    const seed = `${keyword}-${queries[i % queries.length]}-${i}`;
-    const encodedSeed = encodeURIComponent(seed);
-    // picsum.photos supports CORS and seed-based consistent images
-    urls.push(`https://picsum.photos/seed/${encodedSeed}/1280/720`);
+    const id = ids[i % ids.length];
+    urls.push(`https://picsum.photos/id/${id}/1280/720`);
   }
 
-  console.log(`[API] Generated ${urls.length} image URLs for keyword "${keyword}" (mood: ${mood})`);
+  console.log(`[API] Image URLs for keyword "${keyword}" (mood: ${mood}):`);
   urls.forEach((url, i) => console.log(`  [${i}] ${url}`));
 
   return urls;

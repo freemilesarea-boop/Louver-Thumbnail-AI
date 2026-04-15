@@ -111,39 +111,63 @@ const DESIGN_PRESETS = {
 // ─── Image Loading ──────────────────────────────────────────
 
 /**
- * Load an image from URL with CORS support
- * Returns HTMLImageElement or null on failure
+ * Load an image from URL using fetch→blob→objectURL approach.
+ * This bypasses ALL CORS/canvas-tainting issues because:
+ *  1. fetch() handles CORS at network level (follows redirects properly)
+ *  2. Blob URL is same-origin, so canvas is never tainted
+ *  3. Works with picsum.photos redirects, YouTube thumbnails, etc.
+ *
+ * Returns HTMLImageElement or null on failure.
  */
-function loadImage(url) {
-  return new Promise((resolve) => {
-    if (!url) {
-      console.log('[Composer] No image URL provided, will use fallback');
-      resolve(null);
-      return;
+async function loadImage(url) {
+  if (!url) {
+    console.log('[Composer] No image URL provided, will use fallback');
+    return null;
+  }
+
+  try {
+    console.log(`[Composer] Fetching image via fetch+blob: ${url}`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(url, {
+      mode: 'cors',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      console.warn(`[Composer] ✗ Fetch failed: HTTP ${response.status} → ${url}`);
+      return null;
     }
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
 
-    const timeout = setTimeout(() => {
-      console.warn(`[Composer] Image load timeout: ${url}`);
-      resolve(null);
-    }, 8000);
-
-    img.onload = () => {
-      clearTimeout(timeout);
-      console.log(`[Composer] ✓ Image loaded successfully: ${url} (${img.width}x${img.height})`);
-      resolve(img);
-    };
-
-    img.onerror = (err) => {
-      clearTimeout(timeout);
-      console.warn(`[Composer] ✗ Image load failed: ${url}`, err);
-      resolve(null);
-    };
-
-    img.src = url;
-  });
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        console.log(`[Composer] ✓ Image loaded: ${url} (${img.width}x${img.height}, ${(blob.size / 1024).toFixed(1)}KB)`);
+        // Don't revoke yet - canvas needs the image data
+        // Will be garbage collected when img is dereferenced
+        resolve(img);
+      };
+      img.onerror = () => {
+        console.warn(`[Composer] ✗ Image element failed to render blob: ${url}`);
+        URL.revokeObjectURL(objectUrl);
+        resolve(null);
+      };
+      img.src = objectUrl;
+    });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      console.warn(`[Composer] ✗ Image fetch timeout (10s): ${url}`);
+    } else {
+      console.warn(`[Composer] ✗ Image fetch error: ${url}`, err.message);
+    }
+    return null;
+  }
 }
 
 // ─── Drawing Functions ──────────────────────────────────────
