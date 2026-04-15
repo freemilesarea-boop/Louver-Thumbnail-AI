@@ -15,16 +15,16 @@ function getToday() {
 function loadUsage() {
   try {
     const raw = localStorage.getItem(USAGE_KEY);
-    if (!raw) return { date: getToday(), pexels: 0, youtube: 0, fallback: 0 };
+    if (!raw) return { date: getToday(), pexels: 0, youtube: 0, picsum: 0, fallback: 0 };
     const data = JSON.parse(raw);
-    // 날짜가 바뀌면 리셋
     if (data.date !== getToday()) {
       saveToHistory(data);
-      return { date: getToday(), pexels: 0, youtube: 0, fallback: 0 };
+      return { date: getToday(), pexels: 0, youtube: 0, picsum: 0, fallback: 0 };
     }
+    if (!('picsum' in data)) data.picsum = 0;
     return data;
   } catch {
-    return { date: getToday(), pexels: 0, youtube: 0, fallback: 0 };
+    return { date: getToday(), pexels: 0, youtube: 0, picsum: 0, fallback: 0 };
   }
 }
 
@@ -52,12 +52,10 @@ function saveToHistory(dayData) {
  */
 export function recordApiCall(source, count = 1) {
   const usage = loadUsage();
-  const key = source === 'picsum-fallback' ? 'fallback' : source;
-  if (key in usage) {
-    usage[key] += count;
-  }
+  const key = source in usage ? source : 'fallback';
+  usage[key] += count;
   saveUsage(usage);
-  console.log(`[Usage] ${source} +${count} (오늘: Pexels ${usage.pexels}, YouTube ${usage.youtube}, Fallback ${usage.fallback})`);
+  console.log(`[Usage] ${source} +${count} (오늘: Pexels ${usage.pexels}, YouTube ${usage.youtube}, Picsum ${usage.picsum}, Fallback ${usage.fallback})`);
 }
 
 /**
@@ -99,5 +97,5 @@ export function getUsageSummary() {
  * 사용량 초기화
  */
 export function resetUsage() {
-  saveUsage({ date: getToday(), pexels: 0, youtube: 0, fallback: 0 });
+  saveUsage({ date: getToday(), pexels: 0, youtube: 0, picsum: 0, fallback: 0 });
 }

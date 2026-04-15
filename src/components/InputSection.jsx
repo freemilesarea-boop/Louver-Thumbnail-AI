@@ -139,9 +139,9 @@ export default function InputSection() {
             {/* 사용량 */}
             <div className="h-4 w-px bg-louver-border" />
             <div className="flex items-center gap-3 text-xs text-louver-text-muted">
-              <span>오늘: Pexels <strong className="text-louver-text-secondary">{usage.pexels}</strong>회</span>
-              <span>YouTube <strong className="text-louver-text-secondary">{usage.youtube}</strong>회</span>
-              <span>Fallback <strong className="text-louver-text-secondary">{usage.fallback}</strong>회</span>
+              <span>Pexels <strong className="text-louver-text-secondary">{usage.pexels}</strong></span>
+              <span>YouTube <strong className="text-louver-text-secondary">{usage.youtube}</strong></span>
+              <span>Picsum <strong className="text-louver-text-secondary">{usage.picsum || 0}</strong></span>
               {pexelsApiKey && (
                 <span className="text-louver-accent">잔여 ~{usage.pexelsRemaining}회/월</span>
               )}

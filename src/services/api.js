@@ -74,8 +74,21 @@ export async function testPexelsApiKey(apiKey) {
   }
 }
 
+// ─── Picsum 실사 이미지 ID (무드별, API 키 불필요) ──────────
+
+const PICSUM_IDS = {
+  calm:      [10, 15, 20, 54, 106, 164, 173, 319, 396, 491, 533, 598, 651],
+  energetic: [96, 250, 305, 399, 452, 593, 669, 698, 804, 688, 528, 572, 637],
+  emotional: [1, 65, 110, 119, 135, 244, 407, 493, 517, 658, 600, 671, 718],
+  cozy:      [29, 30, 225, 312, 425, 431, 436, 511, 574, 755, 524, 566, 609],
+  dark:      [42, 90, 142, 155, 370, 501, 547, 590, 638, 724, 556, 614, 683],
+  nature:    [10, 15, 16, 28, 29, 100, 180, 353, 401, 433, 509, 551, 615],
+  romantic:  [82, 102, 119, 176, 326, 374, 449, 486, 579, 646, 530, 570, 623],
+  classical: [24, 36, 48, 342, 366, 395, 421, 453, 532, 620, 548, 585, 640],
+};
+
 // ─── 이미지 소싱 (키워드 모드) ───────────────────────────────
-// 우선순위: 캐시 → Pexels API → 오프라인 fallback
+// 우선순위: 캐시 → Pexels API → picsum 실사 → 오프라인 fallback
 
 export async function getImageUrlsForKeyword(keyword, mood, count = 6, apiKey = '') {
   // 1) 캐시 확인
@@ -101,11 +114,20 @@ export async function getImageUrlsForKeyword(keyword, mood, count = 6, apiKey = 
     }
   }
 
-  // 3) 오프라인 fallback (내장 이미지)
-  console.log('[API] → 오프라인 fallback 이미지 사용');
-  const fallbackUrls = getFallbackImages(mood, count);
-  recordApiCall('fallback', 1);
-  return { urls: fallbackUrls, source: 'offline-fallback' };
+  // 3) Picsum 실사 이미지 (API 키 불필요, 네트워크만 있으면 됨)
+  //    Electron: main process proxy로 가져옴 (CORS 없음)
+  //    브라우저: fetch+blob으로 가져옴
+  console.log('[API] → Picsum 실사 이미지 사용 (API 키 불필요)');
+  const ids = PICSUM_IDS[mood] || PICSUM_IDS.calm;
+  const urls = [];
+  for (let i = 0; i < count; i++) {
+    urls.push(`https://picsum.photos/id/${ids[i % ids.length]}/1280/720`);
+  }
+  recordApiCall('picsum', 1);
+  return { urls, source: 'picsum' };
+
+  // 참고: 네트워크 없으면 thumbnailComposer의 loadImage()가 실패 →
+  //        자동으로 그라데이션 fallback 적용됨
 }
 
 // ─── 이미지 소싱 (재생목록 모드) ─────────────────────────────
