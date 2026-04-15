@@ -1,5 +1,6 @@
 import React from 'react';
 import Header from './components/Header';
+import ApiGate from './components/ApiGate';
 import InputSection from './components/InputSection';
 import PlaylistAnalysis from './components/PlaylistAnalysis';
 import ThumbnailResults from './components/ThumbnailResults';
@@ -9,14 +10,22 @@ import LoadingOverlay from './components/LoadingOverlay';
 import useStore from './store/useStore';
 
 export default function App() {
-  const { isLoading, playlistData, moodAnalysis, generatedThumbnails, selectedThumbnail, error } = useStore();
+  const {
+    isLoading, playlistData, moodAnalysis,
+    generatedThumbnails, selectedThumbnail, error,
+    apiGatePassed, passApiGate,
+  } = useStore();
+
+  // API 키 설정 게이트 (첫 실행 시)
+  if (!apiGatePassed) {
+    return <ApiGate onComplete={passApiGate} />;
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-louver-bg">
       <Header />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8 space-y-8">
-        {/* Error display */}
         {error && (
           <div className="animate-fade-in bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
             <svg className="w-5 h-5 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -26,10 +35,8 @@ export default function App() {
               <p className="text-sm font-medium text-red-800">오류가 발생했습니다</p>
               <p className="text-sm text-red-600 mt-1">{error}</p>
             </div>
-            <button
-              onClick={() => useStore.getState().clearError()}
-              className="ml-auto text-red-400 hover:text-red-600"
-            >
+            <button onClick={() => useStore.getState().clearError()}
+              className="ml-auto text-red-400 hover:text-red-600">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
@@ -37,28 +44,14 @@ export default function App() {
           </div>
         )}
 
-        {/* Input section */}
         <InputSection />
 
-        {/* Playlist analysis results */}
-        {playlistData && moodAnalysis && (
-          <PlaylistAnalysis />
-        )}
-
-        {/* Generated thumbnail results */}
-        {generatedThumbnails.length > 0 && (
-          <ThumbnailResults />
-        )}
-
-        {/* Thumbnail detail modal */}
-        {selectedThumbnail && (
-          <ThumbnailDetail />
-        )}
+        {playlistData && moodAnalysis && <PlaylistAnalysis />}
+        {generatedThumbnails.length > 0 && <ThumbnailResults />}
+        {selectedThumbnail && <ThumbnailDetail />}
       </main>
 
       <Footer />
-
-      {/* Loading overlay */}
       {isLoading && <LoadingOverlay />}
     </div>
   );
