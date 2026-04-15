@@ -1,0 +1,46 @@
+{
+  "name": "louver-thumbnail-ai",
+  "version": "1.0.0",
+  "description": "AI-powered YouTube playlist thumbnail auto-generation and CTR optimization system by Louver",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "cross-env NODE_ENV=development electron .",
+    "build": "vite build",
+    "build:electron": "vite build && electron-builder",
+    "preview": "vite preview",
+    "lint": "eslint src/"
+  },
+  "author": "Louver",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^4.5.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3",
+    "electron": "^31.3.1",
+    "electron-builder": "^24.13.3",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6",
+    "vite": "^5.3.4"
+  },
+  "build": {
+    "appId": "com.louver.thumbnail-ai",
+    "productName": "Louver Thumbnail AI",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ]
+  }
+}
